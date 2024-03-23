@@ -1,10 +1,23 @@
+import base64
+
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 
 from recipes.models import Ingredient, Recipe, Tag, IngredientRecipe, TagRecipe
 
 User = get_user_model()
+
+
+class Base64ImageField(serializers.ImageField):
+    def to_internal_value(self, data):
+        if isinstance(data, str) and data.startswith('data:image'):
+            format, imgstr = data.split(';base64,')
+            ext = format.split('/')[-1]
+            data = ContentFile(base64.b64decode(imgstr), name='temp.' + ext)
+        return super().to_internal_value(data)
+
 
 class UserSerializer(serializers.ModelSerializer):
     is_subscribed = serializers.SerializerMethodField(read_only=True)
@@ -148,8 +161,8 @@ class RecipeGetSerializer(serializers.ModelSerializer):
         return [IngredientRecipeSerializer(i).data for i in qset]
 
     def get_is_favorited(self, obj):
-        # ToDo
-        return True
+        request_user = self.context.get('request').user
+        return request_user in obj.recipe_followers.all()
 
     def get_is_in_shopping_cart(self, obj):
         # ToDo
@@ -165,6 +178,7 @@ class RecipeGetSerializer(serializers.ModelSerializer):
 class RecipeSerializer(serializers.ModelSerializer):
     author = serializers.PrimaryKeyRelatedField(read_only=True, default=serializers.CurrentUserDefault())
     tags = serializers.PrimaryKeyRelatedField(queryset=Tag.objects.all(), many=True)
+    image = Base64ImageField(required=False, allow_null=True)
     ingredients = serializers.ListField(write_only=True)
 
     class Meta:

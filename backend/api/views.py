@@ -1,10 +1,11 @@
 from django.http import JsonResponse
 from djoser.views import UserViewSet
 from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics, views, viewsets
 from rest_framework.pagination import PageNumberPagination
 
-from .serializers import IngredientSerializer, RecipeSerializer, TagSerializer, RecipeGetSerializer, UserSerializer, UserRecipesSerializer
+from .serializers import IngredientSerializer, RecipeSerializer, RecipeShortSerializer, TagSerializer, RecipeGetSerializer, UserSerializer, UserRecipesSerializer
 from recipes.models import Ingredient, Recipe, Tag, User
 
 
@@ -19,6 +20,44 @@ class SubscriptionsListAPIView(generics.ListAPIView):
 
     def get_queryset(self):
         return self.request.user.following.all()
+
+
+# class FavoritesListAPIView(generics.ListAPIView):
+#     serializer_class = RecipeGetSerializer
+#     pagination_class = PageNumberPagination
+
+#     def get_queryset(self):
+#         return self.request.user.favorite_recipes.all()
+
+
+class FavoritePostDeleteAPIView(views.APIView):
+    def post(self, request, recipe_id):
+        recipe = get_object_or_404(Recipe, id=recipe_id)
+        if request.user in recipe.recipe_followers.all():
+            pass
+            # нельзя добавлять в избранное дважды
+        recipe.recipe_followers.add(request.user)
+        return JsonResponse(
+            RecipeShortSerializer(
+                recipe,
+                context={'request': request}
+            ).data,
+            status=201
+        )
+
+    def delete(self, request, recipe_id):
+        recipe = get_object_or_404(Recipe, id=recipe_id)
+        if request.user not in recipe.recipe_followers.all():
+            pass
+            # нельзя удалить из избранного то, на что не подписан
+        recipe.recipe_followers.remove(request.user)
+        return JsonResponse(
+            RecipeShortSerializer(
+                recipe,
+                context={'request': request}
+            ).data,
+            status=204
+        )
 
 
 class SubscriptionPostDeleteAPIView(views.APIView):
@@ -60,6 +99,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
     # serializer_class = RecipeSerializer
     pagination_class = PageNumberPagination
+    # filter_backends = (DjangoFilterBackend,)
+    # filterset_fields = ('is_favorited',)
     http_method_names = ('delete', 'get', 'patch', 'post', 'head', 'options')
 
     def get_serializer_class(self):

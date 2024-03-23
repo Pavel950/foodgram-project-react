@@ -13,6 +13,12 @@ class User(AbstractUser):
         symmetrical=False,
         blank=True
     )
+    favorite_recipes = models.ManyToManyField(
+        'Recipe',
+        verbose_name='Избранные рецепты',
+        related_name='recipe_followers',
+        blank=True
+    )
 
 
 class Tag(models.Model):
@@ -61,7 +67,7 @@ class Recipe(models.Model):
     name = models.CharField('Название', max_length=200)
     image = models.ImageField(
         upload_to='recipes/images/',
-        blank=True,
+        # blank=True,
         null=True,
         default=None
     )
