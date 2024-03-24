@@ -5,6 +5,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics, views, viewsets
 from rest_framework.pagination import PageNumberPagination
 
+from .filters import RecipeFilter
 from .serializers import IngredientSerializer, RecipeSerializer, RecipeShortSerializer, TagSerializer, RecipeGetSerializer, UserSerializer, UserRecipesSerializer
 from recipes.models import Ingredient, Recipe, Tag, User
 
@@ -60,6 +61,36 @@ class FavoritePostDeleteAPIView(views.APIView):
         )
 
 
+class ShoppingCartPostDeleteAPIView(views.APIView):
+    def post(self, request, recipe_id):
+        recipe = get_object_or_404(Recipe, id=recipe_id)
+        if request.user in recipe.recipe_shoppers.all():
+            pass
+            # нельзя добавлять в корзину дважды
+        recipe.recipe_shoppers.add(request.user)
+        return JsonResponse(
+            RecipeShortSerializer(
+                recipe,
+                context={'request': request}
+            ).data,
+            status=201
+        )
+
+    def delete(self, request, recipe_id):
+        recipe = get_object_or_404(Recipe, id=recipe_id)
+        if request.user not in recipe.recipe_shoppers.all():
+            pass
+            # нельзя удалить из корзины то, чего нет
+        recipe.recipe_shoppers.remove(request.user)
+        return JsonResponse(
+            RecipeShortSerializer(
+                recipe,
+                context={'request': request}
+            ).data,
+            status=204
+        )
+
+
 class SubscriptionPostDeleteAPIView(views.APIView):
     def post(self, request, user_id):
         following_user = get_object_or_404(User, id=user_id)
@@ -99,7 +130,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
     # serializer_class = RecipeSerializer
     pagination_class = PageNumberPagination
-    # filter_backends = (DjangoFilterBackend,)
+    filter_backends = (DjangoFilterBackend,)
+    filterset_class = RecipeFilter
     # filterset_fields = ('is_favorited',)
     http_method_names = ('delete', 'get', 'patch', 'post', 'head', 'options')
 

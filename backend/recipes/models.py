@@ -19,6 +19,12 @@ class User(AbstractUser):
         related_name='recipe_followers',
         blank=True
     )
+    shopping_cart_recipes = models.ManyToManyField(
+        'Recipe',
+        verbose_name='Рецепты в списке покупок',
+        related_name='recipe_shoppers',
+        blank=True
+    )
 
 
 class Tag(models.Model):

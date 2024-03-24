@@ -3,6 +3,7 @@ import base64
 from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.shortcuts import get_object_or_404
+from djoser import serializers as djoser_serializers
 from rest_framework import serializers
 
 from recipes.models import Ingredient, Recipe, Tag, IngredientRecipe, TagRecipe
@@ -19,7 +20,13 @@ class Base64ImageField(serializers.ImageField):
         return super().to_internal_value(data)
 
 
-class UserSerializer(serializers.ModelSerializer):
+class CustomUserCreateSerializer(djoser_serializers.UserCreateSerializer):
+
+    class Meta(djoser_serializers.UserCreateSerializer.Meta):
+        fields = ('id', 'username', 'password', 'email', 'first_name', 'last_name')
+
+
+class UserSerializer(djoser_serializers.UserSerializer):
     is_subscribed = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
@@ -165,8 +172,8 @@ class RecipeGetSerializer(serializers.ModelSerializer):
         return request_user in obj.recipe_followers.all()
 
     def get_is_in_shopping_cart(self, obj):
-        # ToDo
-        return True
+        request_user = self.context.get('request').user
+        return request_user in obj.recipe_shoppers.all()
 
 
 # class IngredientRecipeToSerializer(serializers.ModelSerializer):
