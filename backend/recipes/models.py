@@ -1,11 +1,11 @@
-from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
-# User = get_user_model()
-
 
 class User(AbstractUser):
+    first_name = models.CharField(max_length=30)
+    last_name = models.CharField(max_length=150)
+    email = models.EmailField(unique=True)
     following = models.ManyToManyField(
         'self',
         verbose_name='Подписки',
@@ -26,6 +26,8 @@ class User(AbstractUser):
         blank=True
     )
 
+    REQUIRED_FIELDS = ('first_name', 'last_name', 'email')
+
 
 class Tag(models.Model):
     name = models.CharField('Название', max_length=200, unique=True)
@@ -44,14 +46,6 @@ class Ingredient(models.Model):
         return self.name
 
 
-# class IngredientAmount(models.Model):
-#     ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
-#     amount = models.PositiveIntegerField('Количество')
-
-#     def __str__(self):
-#         return f'{self.ingredient.name} ({str(self.amount)} {self.ingredient.measurement_unit})'
-
-
 class Recipe(models.Model):
     tags = models.ManyToManyField(
         Tag,
@@ -61,15 +55,12 @@ class Recipe(models.Model):
     )
     author = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='recipes')
-    # ingredients = models.ManyToManyField(IngredientAmount, verbose_name='Ингредиенты (кол-во)')
     ingredients = models.ManyToManyField(
         Ingredient,
         through='IngredientRecipe',
         verbose_name='Ингредиенты',
         related_name='recipes'
     )
-    # is_favorited = models.BooleanField('В избранном', default=False)
-    # is_in_shopping_cart = models.BooleanField('В корзине', default=False)
     name = models.CharField('Название', max_length=200)
     image = models.ImageField(
         upload_to='recipes/images/',
