@@ -155,7 +155,7 @@ class RecipeSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     'Не указано количество ингредиента в рецепте.'
                 )
-            if ingredient['amount'] <= 0:
+            if int(ingredient['amount']) <= 0:
                 raise serializers.ValidationError(
                     'Количество ингредиента должно быть положительным числом.'
                 )
@@ -197,6 +197,38 @@ class RecipeSerializer(serializers.ModelSerializer):
             )
 
         return recipe
+
+    def update(self, instance, validated_data):
+        tags = validated_data.pop('tags')
+        ingredients = validated_data.pop('ingredients')
+
+        instance.tags.clear()
+        instance.ingredients.clear()
+
+        for tag in tags:
+            TagRecipe.objects.create(
+                tag=tag,
+                recipe=instance
+            )
+
+        for ingredient in ingredients:
+            ingredient_obj = get_object_or_404(Ingredient, id=ingredient.get('id'))
+            IngredientRecipe.objects.create(
+                ingredient=ingredient_obj,
+                recipe=instance,
+                amount=ingredient.get('amount')
+            )
+
+        instance.name = validated_data.get('name')
+        instance.image = validated_data.get('image')
+        instance.text = validated_data.get('text')
+        instance.cooking_time = validated_data.get('cooking_time')
+        instance.save()
+        return instance
+
+    def to_representation(self, obj):
+        # print(self.context)
+        return RecipeGetSerializer(obj, context=self.context).data
 
 
 class RecipeShortSerializer(serializers.ModelSerializer):
