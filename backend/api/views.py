@@ -4,14 +4,13 @@ from djoser.permissions import CurrentUserOrAdmin
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics, status, views, viewsets
-# from rest_framework.pagination import PageNumberPagination
-from rest_framework.decorators import action, permission_classes
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .filters import RecipeFilter
+from .filters import IngredientFilter, RecipeFilter
 from .pagination import PageNumberLimitPagination
-from .permissions import AuthorOrReadOnly
+from .permissions import AuthorOrReadOnly  # , RecipeAuthorOrReadOnly
 from .serializers import IngredientSerializer, RecipeSerializer, RecipeShortSerializer, TagSerializer, RecipeGetSerializer, UserSerializer, UserRecipesSerializer
 from recipes.models import Ingredient, Recipe, Tag, User
 
@@ -143,6 +142,8 @@ class ShoppingCartPostDeleteAPIView(views.APIView):
 
 
 class SubscriptionPostDeleteAPIView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request, user_id):
         following_user = get_object_or_404(User, id=user_id)
         if request.user == following_user:
@@ -184,12 +185,15 @@ class SubscriptionPostDeleteAPIView(views.APIView):
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Ingredient.objects.all()
     serializer_class = IngredientSerializer
+    filter_backends = (DjangoFilterBackend,)
+    filterset_class = IngredientFilter
 
 
 class RecipeViewSet(viewsets.ModelViewSet):
     queryset = Recipe.objects.all()
     # serializer_class = RecipeSerializer
     pagination_class = PageNumberLimitPagination
+    # permission_classes = (RecipeAuthorOrReadOnly,)
     permission_classes = (AuthorOrReadOnly,)
     filter_backends = (DjangoFilterBackend,)
     filterset_class = RecipeFilter

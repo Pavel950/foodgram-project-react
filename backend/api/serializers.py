@@ -8,6 +8,15 @@ from rest_framework import serializers
 
 from recipes.models import Ingredient, Recipe, Tag, IngredientRecipe, TagRecipe
 
+RECIPE_CREATE_UPDATE_REQUIRED_FIELDS = (
+    'tags',
+    'ingredients',
+    'name',
+    'image',
+    'text',
+    'cooking_time'
+)
+
 User = get_user_model()
 
 
@@ -98,17 +107,21 @@ class RecipeGetSerializer(serializers.ModelSerializer):
 
     def get_is_favorited(self, obj):
         request_user = self.context.get('request').user
+        # if not request_user.is_authenticated:
+        #     return False
         return request_user in obj.recipe_followers.all()
 
     def get_is_in_shopping_cart(self, obj):
         request_user = self.context.get('request').user
+        # if not request_user.is_authenticated:
+        #     return False
         return request_user in obj.recipe_shoppers.all()
 
 
 class RecipeSerializer(serializers.ModelSerializer):
     author = serializers.PrimaryKeyRelatedField(read_only=True, default=serializers.CurrentUserDefault())
     tags = serializers.PrimaryKeyRelatedField(queryset=Tag.objects.all(), many=True)
-    image = Base64ImageField(required=False, allow_null=True)
+    image = Base64ImageField() # required=False, allow_null=True)
     ingredients = serializers.ListField(write_only=True)
 
     class Meta:
@@ -199,6 +212,12 @@ class RecipeSerializer(serializers.ModelSerializer):
         return recipe
 
     def update(self, instance, validated_data):
+        for field_name in RECIPE_CREATE_UPDATE_REQUIRED_FIELDS:
+            if field_name not in validated_data:
+                raise serializers.ValidationError(
+                    f'Не указано новое значения для поля {field_name} при обновлении рецепта.'
+                )
+
         tags = validated_data.pop('tags')
         ingredients = validated_data.pop('ingredients')
 
@@ -260,6 +279,9 @@ class UserRecipesSerializer(serializers.ModelSerializer):
         return request_user in obj.followers.all()
 
     def get_recipes(self, obj):
+        recipes_limit = self.context.get('request').query_params.get('recipes_limit', None)
+        if recipes_limit:
+            return RecipeShortSerializer(obj.recipes.all()[:int(recipes_limit)], many=True).data
         return RecipeShortSerializer(obj.recipes.all(), many=True).data
 
     def get_recipes_count(self, obj):
