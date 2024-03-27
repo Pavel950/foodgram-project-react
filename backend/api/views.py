@@ -1,4 +1,4 @@
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
 from djoser.views import UserViewSet
@@ -19,7 +19,7 @@ from .serializers import (
     UserSerializer,
     UserRecipesSerializer
 )
-from recipes.models import Ingredient, Recipe, Tag, User
+from recipes.models import Ingredient, IngredientRecipe, Recipe, Tag, User
 
 ERROR_MESSAGES = {
     'favorite': {
@@ -219,6 +219,27 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(author=self.request.user)
+
+    @action(detail=False)
+    def download_shopping_cart(self, request):
+        shopping_cart = {}
+        for recipe in request.user.shopping_cart_recipes.all():
+            for ingredient in recipe.ingredients.all():
+                ingredient_amount = IngredientRecipe.objects.get(
+                    ingredient=ingredient,
+                    recipe=recipe
+                ).amount
+                shopping_cart[
+                    (ingredient.name, ingredient.measurement_unit)
+                ] = shopping_cart.get(
+                    (ingredient.name, ingredient.measurement_unit),
+                    0
+                ) + ingredient_amount
+        with open('shopping_cart.txt', 'w') as f:
+            print('Список покупок:', file=f)
+            for key in shopping_cart:
+                print(f'{key[0]} - {shopping_cart[key]} {key[1]}', file=f)
+        return FileResponse(open('shopping_cart.txt', 'rb'))
 
 
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
