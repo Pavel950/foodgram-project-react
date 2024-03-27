@@ -1,10 +1,43 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import Ingredient, Recipe, Tag, IngredientRecipe, User
+from .models import Ingredient, IngredientRecipe, Recipe, Tag, User
 
-admin.site.register(Ingredient)
-admin.site.register(IngredientRecipe)
-admin.site.register(Recipe)
+
+class IngredientRecipeInline(admin.TabularInline):
+    model = IngredientRecipe
+    extra = 0
+    verbose_name = 'ингредиент в рецепте'
+    verbose_name_plural = 'ингредиенты в рецепте'
+
+
+class TagRecipeInline(admin.TabularInline):
+    model = Recipe.tags.through
+    extra = 0
+    verbose_name = 'тег рецепта'
+    verbose_name_plural = 'теги рецепта'
+
+
+@admin.register(Ingredient)
+class IngredientAdmin(admin.ModelAdmin):
+    list_display = ('name', 'measurement_unit',)
+    search_fields = ('name',)
+
+
+@admin.register(Recipe)
+class RecipeAdmin(admin.ModelAdmin):
+    inlines = [
+        IngredientRecipeInline,
+        TagRecipeInline
+    ]
+    list_display = ('name', 'author', 'favorited_count')
+    list_filter = ('author', 'tags',)
+    search_fields = ('name',)
+    filter_horizontal = ('tags',)
+
+    def favorited_count(self, obj):
+        return User.favorite_recipes.through.objects.filter(recipe=obj).count()
+
+
 admin.site.register(Tag)
 admin.site.register(User, UserAdmin)

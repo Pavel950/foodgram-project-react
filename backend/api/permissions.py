@@ -14,13 +14,3 @@ class AuthorOrReadOnly(permissions.BasePermission):
             request.method in permissions.SAFE_METHODS
             or obj.author == request.user
         )
-
-
-# class RecipeAuthorOrReadOnly(AuthorOrReadOnly):
-#     def has_permission(self, request, view):
-#         return (
-#             request.method in permissions.SAFE_METHODS
-#             and 'is_favorited' not in request.query_params
-#             and 'is_in_shopping_cart' not in request.query_params
-#             or request.user.is_authenticated
-#         )

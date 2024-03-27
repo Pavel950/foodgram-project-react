@@ -19,21 +19,26 @@ class RecipeFilter(FilterSet):
         queryset=Tag.objects.all()
     )
     is_favorited = filters.NumberFilter(method='filter_is_favorited')
-    is_in_shopping_cart = filters.NumberFilter(method='filter_is_in_shopping_cart')
+    is_in_shopping_cart = filters.NumberFilter(
+        method='filter_is_in_shopping_cart'
+    )
 
     class Meta:
         model = Recipe
         fields = ('author', 'tags', 'is_favorited', 'is_in_shopping_cart')
 
     def filter_is_favorited(self, queryset, name, value):
-        # return queryset.filter(author__favorite_recipes)  obj in self.request.user.favorite_recipes
         if not self.request.user.is_authenticated:
             return Recipe.objects.none()
-        wanted_ids = [obj.id for obj in self.request.user.favorite_recipes.all()]
+        wanted_ids = [
+            obj.id for obj in self.request.user.favorite_recipes.all()
+        ]
         return queryset.filter(id__in=wanted_ids)
 
     def filter_is_in_shopping_cart(self, queryset, name, value):
         if not self.request.user.is_authenticated:
             return Recipe.objects.none()
-        wanted_ids = [obj.id for obj in self.request.user.shopping_cart_recipes.all()]
+        wanted_ids = [
+            obj.id for obj in self.request.user.shopping_cart_recipes.all()
+        ]
         return queryset.filter(id__in=wanted_ids)
