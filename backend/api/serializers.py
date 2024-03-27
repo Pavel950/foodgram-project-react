@@ -76,12 +76,16 @@ class TagSerializer(serializers.ModelSerializer):
 
 
 class IngredientRecipeSerializer(serializers.ModelSerializer):
+    id = serializers.SerializerMethodField()
     name = serializers.SerializerMethodField()
     measurement_unit = serializers.SerializerMethodField()
 
     class Meta:
         model = IngredientRecipe
         fields = ('id', 'name', 'measurement_unit', 'amount')
+
+    def get_id(self, obj):
+        return obj.ingredient.id
 
     def get_name(self, obj):
         return obj.ingredient.name
@@ -119,14 +123,10 @@ class RecipeGetSerializer(serializers.ModelSerializer):
 
     def get_is_favorited(self, obj):
         request_user = self.context.get('request').user
-        # if not request_user.is_authenticated:
-        #     return False
         return request_user in obj.recipe_followers.all()
 
     def get_is_in_shopping_cart(self, obj):
         request_user = self.context.get('request').user
-        # if not request_user.is_authenticated:
-        #     return False
         return request_user in obj.recipe_shoppers.all()
 
 
