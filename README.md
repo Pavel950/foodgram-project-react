@@ -15,6 +15,13 @@ Foodgram - сервис для публикации рецептов.
 ## Стек проекта
 Python, Django, Django REST framework, PostgreSQL, Nginx, Gunicorn, Docker
 
+## Информация для доступа к проекту
+### Адрес сервера:  
+https://foodgram-proj.sytes.net  
+### Данные администратора:
+- логин: super
+- email: super@1.ru
+- пароль: admin
 
 ## Как запустить проект
 
@@ -50,7 +57,7 @@ SECRET_KEY=secret_value
 
 **Запустить сеть контейнеров:**
 ```
-docker compose -f docker-compose.production.yml up
+docker compose -f docker-compose.production.yml up -d
 ```
 
 **Применить миграции в контейнере backend:**
@@ -58,10 +65,17 @@ docker compose -f docker-compose.production.yml up
 ```
 docker compose -f docker-compose.production.yml exec backend python manage.py migrate
 ```
+
 **Создать и скопировать статику в контейнере backend:**
 
 ```
 docker compose -f docker-compose.production.yml exec backend python manage.py collectstatic
 
 docker compose -f docker-compose.production.yml exec backend cp -r /app/collected_static/. /backend_static/static/
+```
+
+**Импортировать данные из директории data в БД в контейнере backend:**
+
+```
+docker compose -f docker-compose.production.yml exec backend python manage.py import_data
 ```
