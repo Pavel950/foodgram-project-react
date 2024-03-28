@@ -315,7 +315,7 @@ class UserRecipesSerializer(serializers.ModelSerializer):
             return RecipeShortSerializer(
                 obj.recipes.all()[:int(recipes_limit)],
                 many=True
-                ).data
+            ).data
         return RecipeShortSerializer(obj.recipes.all(), many=True).data
 
     def get_recipes_count(self, obj):
