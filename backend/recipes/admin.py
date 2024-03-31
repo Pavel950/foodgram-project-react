@@ -4,16 +4,24 @@ from django.contrib.auth.admin import UserAdmin
 from .models import Ingredient, IngredientRecipe, Recipe, Tag, User
 
 
-class IngredientRecipeInline(admin.TabularInline):
-    model = IngredientRecipe
+class RequiredInline(admin.TabularInline):
+    min_num = 1
     extra = 0
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj=None, **kwargs)
+        formset.validate_min = True
+        return formset
+
+
+class IngredientRecipeInline(RequiredInline):
+    model = IngredientRecipe
     verbose_name = 'ингредиент в рецепте'
     verbose_name_plural = 'ингредиенты в рецепте'
 
 
-class TagRecipeInline(admin.TabularInline):
+class TagRecipeInline(RequiredInline):
     model = Recipe.tags.through
-    extra = 0
     verbose_name = 'тег рецепта'
     verbose_name_plural = 'теги рецепта'
 
