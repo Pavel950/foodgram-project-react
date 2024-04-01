@@ -1,8 +1,7 @@
-from django.http import FileResponse, JsonResponse
-from django.shortcuts import get_object_or_404
+from django.http import FileResponse, Http404, JsonResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from djoser.views import UserViewSet
-from rest_framework import generics, status, views, viewsets
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -12,32 +11,22 @@ from .pagination import PageNumberLimitPagination
 from .permissions import AuthorOrReadOnly
 from .serializers import (
     IngredientSerializer,
+    RecipeGetSerializer,
     RecipeSerializer,
     RecipeShortSerializer,
     TagSerializer,
-    RecipeGetSerializer,
     UserSerializer,
     UserRecipesSerializer
 )
-from recipes.models import Ingredient, IngredientRecipe, Recipe, Tag, User
-
-ERROR_MESSAGES = {
-    'favorite': {
-        'does_not_exist': 'Рецепта с id={id} не существует.',
-        'not_in': 'Рецепта с id={id} нет в избранном.',
-        'add_twice': 'Рецепт с id={id} уже есть в избранном.'
-    },
-    'shopping_cart': {
-        'does_not_exist': 'Рецепта с id={id} не существует.',
-        'not_in': 'Рецепта с id={id} нет в корзине.',
-        'add_twice': 'Рецепт с id={id} уже есть в корзине.'
-    },
-    'subscription': {
-        'self_following': 'Нельзя подписаться на самого себя.',
-        'not_in': 'Отсутствует подписка на пользователя с id={id}.',
-        'add_twice': 'Повторная попытка подписаться на пользователя c id={id}.'
-    }
-}
+from recipes.models import (
+    Favorite,
+    Follow,
+    Ingredient,
+    IngredientRecipe,
+    Recipe,
+    ShoppingCart,
+    Tag
+)
 
 
 class CustomUserViewSet(UserViewSet):
@@ -46,151 +35,78 @@ class CustomUserViewSet(UserViewSet):
     serializer_class = UserSerializer
     pagination_class = PageNumberLimitPagination
 
-    @action(["get", "put", "patch", "delete"],
+    @action(['get', 'put', 'patch', 'delete'],
             detail=False,
             permission_classes=[IsAuthenticated])
     def me(self, request, *args, **kwargs):
         return super().me(request, *args, **kwargs)
 
-
-class BasePostDeleteUserSubscriptionAPIView(views.APIView):
-    """
-    Базовый класс для создания/удаления подписок пользователя
-    на что-то/кого-то.
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def post(
-        self, request,
-        obj_id, obj_class,
-        related_name, obj_serializer,
-        error_messages_dict
-    ):
-        try:
-            obj = obj_class.objects.get(id=obj_id)
-        except obj_class.DoesNotExist:
-            return Response(
-                {'errors': error_messages_dict['does_not_exist'].format(
-                    id=obj_id
-                )},
-                status=status.HTTP_400_BAD_REQUEST
+    @action(detail=True,
+            methods=['post', 'delete'],
+            permission_classes=[IsAuthenticated])
+    def subscribe(self, request, id=None):
+        following_user = self.get_object()
+        if request.method == 'POST':
+            if request.user == following_user:
+                return Response(
+                    {'errors': 'Нельзя подписаться на самого себя.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if Follow.objects.filter(
+                user=request.user,
+                following_to=following_user
+            ).exists():
+                return Response(
+                    {'errors': 'Вы уже подписаны на пользователя '
+                               f'{following_user.username}.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            Follow.objects.create(
+                user=request.user,
+                following_to=following_user
             )
-        return self.post_obj(
-            request, obj,
-            related_name, obj_serializer,
-            error_messages_dict
-        )
-
-    def post_obj(
-        self, request,
-        obj, related_name,
-        obj_serializer, error_messages_dict
-    ):
-        if request.user in getattr(obj, related_name).all():
-            return Response(
-                {'errors': error_messages_dict['add_twice'].format(id=obj.id)},
-                status=status.HTTP_400_BAD_REQUEST
+            return JsonResponse(
+                UserRecipesSerializer(
+                    following_user,
+                    context={'request': request}
+                ).data,
+                status=status.HTTP_201_CREATED
             )
-        getattr(obj, related_name).add(request.user)
-        return JsonResponse(
-            obj_serializer(
-                obj,
-                context={'request': request}
-            ).data,
-            status=status.HTTP_201_CREATED
-        )
-
-    def delete(
-        self, request,
-        obj_id, obj_class,
-        related_name, obj_serializer,
-        error_messages_dict
-    ):
-        obj = get_object_or_404(obj_class, id=obj_id)
-        if request.user not in getattr(obj, related_name).all():
-            return Response(
-                {'errors': error_messages_dict['not_in'].format(id=obj_id)},
-                status=status.HTTP_400_BAD_REQUEST
+        else:
+            try:
+                follow = Follow.objects.get(
+                    user=request.user,
+                    following_to=following_user
+                )
+            except Follow.DoesNotExist:
+                return Response(
+                    {'errors': 'Вы не были подписаны на пользователя '
+                               f'{following_user.username}.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            follow.delete()
+            return JsonResponse(
+                UserRecipesSerializer(
+                    following_user,
+                    context={'request': request}
+                ).data,
+                status=status.HTTP_204_NO_CONTENT
             )
-        getattr(obj, related_name).remove(request.user)
-        return JsonResponse(
-            obj_serializer(
-                obj,
-                context={'request': request}
-            ).data,
-            status=status.HTTP_204_NO_CONTENT
+
+    @action(['get'],
+            detail=False,
+            permission_classes=[IsAuthenticated])
+    def subscriptions(self, request):
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(
+            request.user.following.all(),
+            request
         )
-
-
-class FavoritePostDeleteAPIView(BasePostDeleteUserSubscriptionAPIView):
-    """View-класс добавления/удаления рецепта из избранного."""
-
-    def post(self, request, recipe_id):
-        return super().post(
-            request, recipe_id,
-            Recipe, 'recipe_followers',
-            RecipeShortSerializer, ERROR_MESSAGES['favorite']
-        )
-
-    def delete(self, request, recipe_id):
-        return super().delete(
-            request, recipe_id,
-            Recipe, 'recipe_followers',
-            RecipeShortSerializer, ERROR_MESSAGES['favorite']
-        )
-
-
-class ShoppingCartPostDeleteAPIView(BasePostDeleteUserSubscriptionAPIView):
-    """View-класс добавления/удаления рецепта из корзины."""
-
-    def post(self, request, recipe_id):
-        return super().post(
-            request, recipe_id,
-            Recipe, 'recipe_shoppers',
-            RecipeShortSerializer, ERROR_MESSAGES['shopping_cart']
-        )
-
-    def delete(self, request, recipe_id):
-        return super().delete(
-            request, recipe_id,
-            Recipe, 'recipe_shoppers',
-            RecipeShortSerializer, ERROR_MESSAGES['shopping_cart']
-        )
-
-
-class SubscriptionPostDeleteAPIView(BasePostDeleteUserSubscriptionAPIView):
-    """View-класс добавления/удаления подписки на пользователя."""
-
-    def post(self, request, user_id):
-        following_user = get_object_or_404(User, id=user_id)
-        if request.user == following_user:
-            return Response(
-                {'errors': ERROR_MESSAGES['subscription']['self_following']},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        return super().post_obj(
-            request, following_user,
-            'followers', UserRecipesSerializer,
-            ERROR_MESSAGES['subscription']
-        )
-
-    def delete(self, request, user_id):
-        return super().delete(
-            request, user_id,
-            User, 'followers',
-            UserRecipesSerializer, ERROR_MESSAGES['subscription']
-        )
-
-
-class SubscriptionsListAPIView(generics.ListAPIView):
-    """View-класс для получения списка подписок пользователя."""
-
-    serializer_class = UserRecipesSerializer
-    pagination_class = PageNumberLimitPagination
-
-    def get_queryset(self):
-        return self.request.user.following.all()
+        return paginator.get_paginated_response(UserRecipesSerializer(
+            page,
+            many=True,
+            context={'request': request}
+        ).data)
 
 
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
@@ -240,6 +156,96 @@ class RecipeViewSet(viewsets.ModelViewSet):
             for key in shopping_cart:
                 print(f'{key[0]} - {shopping_cart[key]} {key[1]}', file=f)
         return FileResponse(open('shopping_cart.txt', 'rb'))
+
+    @action(detail=True,
+            methods=['post', 'delete'],
+            permission_classes=[IsAuthenticated])
+    def favorite(self, request, pk=None):
+        if request.method == 'POST':
+            try:
+                recipe = self.get_object()
+            except Http404:
+                return Response(
+                    {'errors': 'Рецепт не найден.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if Favorite.objects.filter(
+                user=request.user,
+                recipe=recipe
+            ).exists():
+                return Response(
+                    {'errors': f'Рецепт с названием {recipe.name} '
+                               'уже есть в избранном.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            Favorite.objects.create(user=request.user, recipe=recipe)
+            return JsonResponse(
+                RecipeShortSerializer(recipe).data,
+                status=status.HTTP_201_CREATED
+            )
+        else:
+            recipe = self.get_object()
+            try:
+                recipe_in_favorite = Favorite.objects.get(
+                    user=request.user,
+                    recipe=recipe
+                )
+            except Favorite.DoesNotExist:
+                return Response(
+                    {'errors': f'Рецепта с названием {recipe.name} '
+                               'нет в избранном.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            recipe_in_favorite.delete()
+            return JsonResponse(
+                RecipeShortSerializer(recipe).data,
+                status=status.HTTP_204_NO_CONTENT
+            )
+
+    @action(detail=True,
+            methods=['post', 'delete'],
+            permission_classes=[IsAuthenticated])
+    def shopping_cart(self, request, pk=None):
+        if request.method == 'POST':
+            try:
+                recipe = self.get_object()
+            except Http404:
+                return Response(
+                    {'errors': 'Рецепт не найден.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if ShoppingCart.objects.filter(
+                user=request.user,
+                recipe=recipe
+            ).exists():
+                return Response(
+                    {'errors': f'Рецепт с названием {recipe.name} '
+                               'уже есть в корзине.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            ShoppingCart.objects.create(user=request.user, recipe=recipe)
+            return JsonResponse(
+                RecipeShortSerializer(recipe).data,
+                status=status.HTTP_201_CREATED
+            )
+        else:
+            recipe = self.get_object()
+            try:
+                recipe_in_shopping_cart = ShoppingCart.objects.get(
+                    user=request.user,
+                    recipe=recipe
+                )
+            except ShoppingCart.DoesNotExist:
+                return Response(
+                    {'errors': f'Рецепта с названием {recipe.name} '
+                               'нет в корзине.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            recipe_in_shopping_cart.delete()
+            return JsonResponse(
+                RecipeShortSerializer(recipe).data,
+                status=status.HTTP_204_NO_CONTENT
+            )
 
 
 class TagViewSet(viewsets.ReadOnlyModelViewSet):
