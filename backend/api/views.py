@@ -1,7 +1,5 @@
-from io import StringIO
-
 from django.db.models import Count, Exists, F, OuterRef
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, JsonResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from djoser.views import UserViewSet
 from rest_framework import status, viewsets
@@ -14,6 +12,7 @@ from .pagination import PageNumberLimitPagination
 from .permissions import AuthorOrReadOnly
 from .serializers import (
     FavoriteSerializer,
+    FollowSerializer,
     IngredientSerializer,
     RecipeGetSerializer,
     RecipeSerializer,
@@ -21,6 +20,7 @@ from .serializers import (
     ShoppingCartSerializer,
     TagSerializer,
     UserSerializer,
+    UserRecipesCountSerializer,
     UserRecipesSerializer
 )
 from recipes.models import (
@@ -44,80 +44,59 @@ class CustomUserViewSet(UserViewSet):
     def get_queryset(self):
         return User.objects.annotate(recipes_count=Count('recipes'))
 
-    # @action(['get', 'put', 'patch', 'delete'],
-    #         detail=False,
-    #         permission_classes=[IsAuthenticated])
-    # def me(self, request, *args, **kwargs):
-    #     return super().me(request, *args, **kwargs)
-
     def get_permissions(self):
         if self.action == 'me':
             return (IsAuthenticated(),)
         return super().get_permissions()
 
-    @action(detail=True,
-            methods=['post', 'delete'],
-            permission_classes=[IsAuthenticated])
-    def subscribe(self, request, id=None):
-        following_user = self.get_object()
-        if request.method == 'POST':
-            if request.user == following_user:
-                return Response(
-                    {'errors': 'Нельзя подписаться на самого себя.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            if Follow.objects.filter(
-                user=request.user,
-                following_to=following_user
-            ).exists():
-                return Response(
-                    {'errors': 'Вы уже подписаны на пользователя '
-                               f'{following_user.username}.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            Follow.objects.create(
-                user=request.user,
-                following_to=following_user
-            )
-            return JsonResponse(
-                UserRecipesSerializer(
-                    following_user,
-                    context={'request': request}
-                ).data,
-                status=status.HTTP_201_CREATED
-            )
-        else:
-            try:
-                follow = Follow.objects.get(
-                    user=request.user,
-                    following_to=following_user
-                )
-            except Follow.DoesNotExist:
-                return Response(
-                    {'errors': 'Вы не были подписаны на пользователя '
-                               f'{following_user.username}.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            follow.delete()
-            return JsonResponse(
-                UserRecipesSerializer(
-                    following_user,
-                    context={'request': request}
-                ).data,
-                status=status.HTTP_204_NO_CONTENT
-            )
+    @staticmethod
+    def create_relation(serializer, request, id):
+        relation_dict = {
+            'user': request.user.id,
+            'author': id
+        }
+        relation_serializer = serializer(
+            data=relation_dict,
+            context={'request': request}
+        )
+        relation_serializer.is_valid(raise_exception=True)
+        relation_instance = relation_serializer.save()
+        return JsonResponse(
+            UserRecipesCountSerializer(
+                relation_instance.author,
+                context={'request': request}
+            ).data,
+            status=status.HTTP_201_CREATED
+        )
 
-    @action(['get'],
-            detail=False,
-            permission_classes=[IsAuthenticated])
+    @staticmethod
+    def delete_relation(relation_class, request, id):
+        relation = relation_class.objects.filter(
+            user=request.user,
+            author__id=id
+        )
+        if relation.exists():
+            relation.first().delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {'errors': (f'Автора с id = {id} нет '
+                        f'в таблице {relation_class.__name__}.')},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    @action(detail=True,
+            methods=('post',),
+            permission_classes=(IsAuthenticated,))
+    def subscribe(self, request, id=None):
+        return CustomUserViewSet.create_relation(FollowSerializer, request, id)
+
+    @subscribe.mapping.delete
+    def delete_subscribe(self, request, id=None):
+        return CustomUserViewSet.delete_relation(Follow, request, id)
+
+    @action(detail=False,
+            permission_classes=(IsAuthenticated,))
     def subscriptions(self, request):
-        # paginator = self.pagination_class()
-        # page = paginator.paginate_queryset(
-        #     User.objects.filter(
-        #         follow_followers__user=request.user
-        #     ).annotate(recipes_count=Count('recipes')),
-        #     request
-        # )
         qset = User.objects.filter(
             follow_followers__user=request.user
         ).annotate(recipes_count=Count('recipes'))
@@ -126,11 +105,6 @@ class CustomUserViewSet(UserViewSet):
             many=True,
             context={'request': request}
         ).data)
-        # return paginator.get_paginated_response(UserRecipesSerializer(
-        #     page,
-        #     many=True,
-        #     context={'request': request}
-        # ).data)
 
 
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
@@ -145,7 +119,6 @@ class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
 class RecipeViewSet(viewsets.ModelViewSet):
     """ViewSet для рецептов."""
 
-    # queryset = Recipe.objects.all()
     pagination_class = PageNumberLimitPagination
     permission_classes = (AuthorOrReadOnly,)
     filter_backends = (DjangoFilterBackend,)
@@ -169,24 +142,21 @@ class RecipeViewSet(viewsets.ModelViewSet):
                     recipe__pk=OuterRef('pk')
                 )
             )
-        )
+        ).select_related('author').prefetch_related('tags', 'ingredients')
 
     def get_serializer_class(self):
         if self.action in ('list', 'retrieve'):
             return RecipeGetSerializer
         return RecipeSerializer
 
-    # def perform_create(self, serializer):
-    #     serializer.save(author=self.request.user)
-
     @action(detail=False)
     def download_shopping_cart(self, request):
-        ingredients = ShoppingCart.objects.filter(
-            recipe__shopping__user=request.user
+        ingredients = IngredientRecipe.objects.filter(
+            recipe__shoppingcart_set__user=request.user
         ).values(
-            name=F('recipe__ingredients__name'),
-            amount=F('recipe__ingredients__ingredient_in_recipe__amount'),
-            measurement_unit=F('recipe__ingredients__measurement_unit')
+            'amount',
+            name=F('ingredient__name'),
+            measurement_unit=F('ingredient__measurement_unit'),
         ).order_by('name')
 
         shopping_cart = {}
@@ -195,28 +165,13 @@ class RecipeViewSet(viewsets.ModelViewSet):
             shopping_cart[key] = (shopping_cart.get(key, 0)
                                   + ingredient['amount'])
 
-        # print(shopping_cart)
-        # for recipe in request.user.shopping_cart_recipes.all():
-        #     for ingredient in recipe.ingredients.all():
-        #         ingredient_amount = IngredientRecipe.objects.get(
-        #             ingredient=ingredient,
-        #             recipe=recipe
-        #         ).amount
-        #         shopping_cart[
-        #             (ingredient.name, ingredient.measurement_unit)
-        #         ] = shopping_cart.get(
-        #             (ingredient.name, ingredient.measurement_unit),
-        #             0
-        #         ) + ingredient_amount
         file_content_string = 'Список покупок:'
         for key in shopping_cart:
-            file_content_string += '\n' + f'{key[0]} - {shopping_cart[key]} {key[1]}'
-        # with open('shopping_cart.txt', 'w') as f:
-        #     print('Список покупок:', file=f)
-        #     for key in shopping_cart:
-        #         print(f'{key[0]} - {shopping_cart[key]} {key[1]}', file=f)
-        # return FileResponse(open('shopping_cart.txt', 'rb'))
-        return FileResponse(bytearray(file_content_string, 'utf-8'))
+            file_content_string += ('\n' + f'{key[0]} - {shopping_cart[key]} '
+                                    f'{key[1]}')
+        return FileResponse(file_content_string,
+                            as_attachment=True,
+                            content_type='text/plain')
 
     @staticmethod
     def create_relation(serializer, request, pk):
@@ -224,7 +179,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
             'user': request.user.id,
             'recipe': pk
         }
-        relation_serializer = serializer(data=relation_dict)  # context={'request': request}
+        relation_serializer = serializer(data=relation_dict)
         relation_serializer.is_valid(raise_exception=True)
         relation_instance = relation_serializer.save()
         return JsonResponse(
@@ -242,13 +197,14 @@ class RecipeViewSet(viewsets.ModelViewSet):
             relation.first().delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(
-            {'errors': f'Рецепта с id = {pk} нет в таблице {relation_class.__name__}.'},
+            {'errors': (f'Рецепта с id = {pk} нет '
+                        f'в таблице {relation_class.__name__}.')},
             status=status.HTTP_400_BAD_REQUEST
         )
 
     @action(detail=True,
-            methods=['post'],
-            permission_classes=[IsAuthenticated])
+            methods=('post',),
+            permission_classes=(IsAuthenticated,))
     def favorite(self, request, pk=None):
         return RecipeViewSet.create_relation(FavoriteSerializer, request, pk)
 
@@ -257,8 +213,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
         return RecipeViewSet.delete_relation(Favorite, request, pk)
 
     @action(detail=True,
-            methods=['post'],
-            permission_classes=[IsAuthenticated])
+            methods=('post',),
+            permission_classes=(IsAuthenticated,))
     def shopping_cart(self, request, pk=None):
         return RecipeViewSet.create_relation(
             ShoppingCartSerializer,

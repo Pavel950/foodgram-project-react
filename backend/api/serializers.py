@@ -1,6 +1,7 @@
 from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers, validators
 
+import recipes.constants
 from recipes.models import (
     Favorite,
     Follow,
@@ -43,7 +44,7 @@ class UserSerializer(serializers.ModelSerializer):
             and request.user.is_authenticated
             and Follow.objects.filter(
                 user=request.user,
-                following_to=obj
+                author=obj
             ).exists()
         )
 
@@ -64,7 +65,10 @@ class TagSerializer(serializers.ModelSerializer):
 
 class IngredientRecipeShortSerializer(serializers.Serializer):
     id = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
-    amount = serializers.IntegerField(min_value=1, max_value=1000000)
+    amount = serializers.IntegerField(
+        min_value=recipes.constants.MIN_POSITIVE_INTEGER,
+        max_value=recipes.constants.MAX_DEFAULT
+    )
 
 
 class IngredientRecipeSerializer(serializers.ModelSerializer):
@@ -127,7 +131,10 @@ class RecipeSerializer(serializers.ModelSerializer):
         allow_empty_file=False
     )
     ingredients = IngredientRecipeShortSerializer(many=True)
-    cooking_time = serializers.IntegerField(min_value=1, max_value=1000000)
+    cooking_time = serializers.IntegerField(
+        min_value=recipes.constants.MIN_POSITIVE_INTEGER,
+        max_value=recipes.constants.MAX_COOKING_TIME
+    )
 
     class Meta:
         fields = (
@@ -247,6 +254,16 @@ class UserRecipesSerializer(UserSerializer):
         return RecipeShortSerializer(qset, many=True).data
 
 
+class UserRecipesCountSerializer(UserRecipesSerializer):
+    recipes_count = serializers.SerializerMethodField()
+
+    class Meta(UserRecipesSerializer.Meta):
+        pass
+
+    def get_recipes_count(self, obj):
+        return obj.recipes.all().count()
+
+
 class FavoriteSerializer(serializers.ModelSerializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     recipe = serializers.PrimaryKeyRelatedField(queryset=Recipe.objects.all())
@@ -277,3 +294,26 @@ class ShoppingCartSerializer(serializers.ModelSerializer):
                 fields=('user', 'recipe')
             ),
         )
+
+
+class FollowSerializer(serializers.ModelSerializer):
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    author = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+
+    class Meta:
+        fields = '__all__'
+        model = Follow
+
+        validators = (
+            validators.UniqueTogetherValidator(
+                queryset=Follow.objects.all(),
+                fields=('user', 'author')
+            ),
+        )
+
+    def validate_author(self, value):
+        if value == self.context['request'].user:
+            raise serializers.ValidationError(
+                'Пользователь не может подписаться на себя самого!'
+            )
+        return value

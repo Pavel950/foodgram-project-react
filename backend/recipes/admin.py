@@ -20,12 +20,6 @@ class IngredientRecipeInline(RequiredInline):
     verbose_name_plural = 'ингредиенты в рецепте'
 
 
-class TagRecipeInline(RequiredInline):
-    model = Recipe.tags.through
-    verbose_name = 'тег рецепта'
-    verbose_name_plural = 'теги рецепта'
-
-
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
     list_display = ('name', 'measurement_unit',)
@@ -34,17 +28,17 @@ class IngredientAdmin(admin.ModelAdmin):
 
 @admin.register(Recipe)
 class RecipeAdmin(admin.ModelAdmin):
-    inlines = [
+    inlines = (
         IngredientRecipeInline,
-        TagRecipeInline
-    ]
+    )
     list_display = ('name', 'author', 'favorited_count')
     list_filter = ('author', 'tags',)
     search_fields = ('name',)
     filter_horizontal = ('tags',)
 
+    @admin.display(description='кол-во добавлений в избранное')
     def favorited_count(self, obj):
-        return User.favorite_recipes.through.objects.filter(recipe=obj).count()
+        return obj.favorite_set.count()
 
 
 admin.site.register(Tag)
