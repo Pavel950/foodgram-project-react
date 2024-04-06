@@ -27,6 +27,9 @@ class User(AbstractUser):
         verbose_name = 'пользователь'
         verbose_name_plural = 'пользователи'
 
+    def __str__(self):
+        return self.username
+
 
 class Tag(models.Model):
     name = models.CharField(
@@ -105,7 +108,7 @@ class Recipe(models.Model):
         'Время приготовления',
         validators=(
             MinValueValidator(constants.MIN_POSITIVE_INTEGER),
-            MaxValueValidator(constants.MAX_COOKING_TIME)
+            MaxValueValidator(constants.MAX_POSITIVE_SMALL_INTEGER)
         )
     )
     pub_date = models.DateTimeField('Дата публикации', auto_now_add=True)
@@ -142,7 +145,7 @@ class IngredientRecipe(models.Model):
         'Количество',
         validators=(
             MinValueValidator(constants.MIN_POSITIVE_INTEGER),
-            MaxValueValidator(constants.MAX_DEFAULT)
+            MaxValueValidator(constants.MAX_POSITIVE_SMALL_INTEGER)
         )
     )
 
@@ -177,40 +180,30 @@ class UserRecipeBaseModel(models.Model):
 
     class Meta:
         abstract = True
+        constraints = (
+            models.UniqueConstraint(
+                fields=('user', 'recipe'),
+                name='unique_recipe_in_%(class)s'
+            ),
+        )
+
+    def __str__(self):
+        return (f'{self.recipe.name} - {self._meta.verbose_name} '
+                f'{self.user.username}')
 
 
 class ShoppingCart(UserRecipeBaseModel):
 
-    class Meta:
+    class Meta(UserRecipeBaseModel.Meta):
         verbose_name = 'рецепт в корзине пользователя'
         verbose_name_plural = 'рецепты в корзинах пользователей'
-        constraints = (
-            models.UniqueConstraint(
-                fields=('user', 'recipe'),
-                name='unique_recipe_in_shopping_cart'
-            ),
-        )
-
-    def __str__(self):
-        return (f'рецепт {self.recipe.name} '
-                f'в корзине пользователя {self.user.username}')
 
 
 class Favorite(UserRecipeBaseModel):
 
-    class Meta:
+    class Meta(UserRecipeBaseModel.Meta):
         verbose_name = 'рецепт в избранном пользователя'
         verbose_name_plural = 'рецепты в избранном пользователей'
-        constraints = (
-            models.UniqueConstraint(
-                fields=('user', 'recipe'),
-                name='unique_recipe_in_favorite'
-            ),
-        )
-
-    def __str__(self):
-        return (f'рецепт {self.recipe.name} '
-                f'в избранном пользователя {self.user.username}')
 
 
 class Follow(models.Model):

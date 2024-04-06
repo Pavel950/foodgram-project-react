@@ -1,5 +1,5 @@
 from django.db.models import Count, Exists, F, OuterRef
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from djoser.views import UserViewSet
 from rest_framework import status, viewsets
@@ -16,11 +16,9 @@ from .serializers import (
     IngredientSerializer,
     RecipeGetSerializer,
     RecipeSerializer,
-    RecipeShortSerializer,
     ShoppingCartSerializer,
     TagSerializer,
     UserSerializer,
-    UserRecipesCountSerializer,
     UserRecipesSerializer
 )
 from recipes.models import (
@@ -35,7 +33,7 @@ from recipes.models import (
 )
 
 
-class CustomUserViewSet(UserViewSet):
+class UserSubscriptionViewSet(UserViewSet):
     """ViewSet для пользователей."""
 
     serializer_class = UserSerializer
@@ -60,12 +58,9 @@ class CustomUserViewSet(UserViewSet):
             context={'request': request}
         )
         relation_serializer.is_valid(raise_exception=True)
-        relation_instance = relation_serializer.save()
-        return JsonResponse(
-            UserRecipesCountSerializer(
-                relation_instance.author,
-                context={'request': request}
-            ).data,
+        relation_serializer.save()
+        return Response(
+            relation_serializer.data,
             status=status.HTTP_201_CREATED
         )
 
@@ -88,11 +83,15 @@ class CustomUserViewSet(UserViewSet):
             methods=('post',),
             permission_classes=(IsAuthenticated,))
     def subscribe(self, request, id=None):
-        return CustomUserViewSet.create_relation(FollowSerializer, request, id)
+        return UserSubscriptionViewSet.create_relation(
+            FollowSerializer,
+            request,
+            id
+        )
 
     @subscribe.mapping.delete
     def delete_subscribe(self, request, id=None):
-        return CustomUserViewSet.delete_relation(Follow, request, id)
+        return UserSubscriptionViewSet.delete_relation(Follow, request, id)
 
     @action(detail=False,
             permission_classes=(IsAuthenticated,))
@@ -126,28 +125,45 @@ class RecipeViewSet(viewsets.ModelViewSet):
     http_method_names = ('delete', 'get', 'patch', 'post', 'head', 'options')
 
     def get_queryset(self):
-        user_id = -1
+        qset = Recipe.objects.select_related('author').prefetch_related(
+            'tags',
+            'ingredients'
+        )
         if self.request.user.is_authenticated:
-            user_id = self.request.user.id
-        return Recipe.objects.annotate(
-            is_favorited=Exists(
-                Favorite.objects.filter(
-                    user__id=user_id,
-                    recipe__pk=OuterRef('pk')
-                )
-            ),
-            is_in_shopping_cart=Exists(
-                ShoppingCart.objects.filter(
-                    user__id=user_id,
-                    recipe__pk=OuterRef('pk')
+            qset = qset.annotate(
+                is_favorited=Exists(
+                    Favorite.objects.filter(
+                        user__id=self.request.user.id,
+                        recipe__pk=OuterRef('pk')
+                    )
+                ),
+                is_in_shopping_cart=Exists(
+                    ShoppingCart.objects.filter(
+                        user__id=self.request.user.id,
+                        recipe__pk=OuterRef('pk')
+                    )
                 )
             )
-        ).select_related('author').prefetch_related('tags', 'ingredients')
+        return qset
 
     def get_serializer_class(self):
         if self.action in ('list', 'retrieve'):
             return RecipeGetSerializer
         return RecipeSerializer
+
+    @staticmethod
+    def create_ingredients_str(ingredients):
+        shopping_cart = {}
+        for ingredient in ingredients:
+            key = (ingredient['name'], ingredient['measurement_unit'])
+            shopping_cart[key] = (shopping_cart.get(key, 0)
+                                  + ingredient['amount'])
+
+        file_content_string = 'Список покупок:'
+        for key in shopping_cart:
+            file_content_string += ('\n' + f'{key[0]} - {shopping_cart[key]} '
+                                    f'{key[1]}')
+        return file_content_string
 
     @action(detail=False)
     def download_shopping_cart(self, request):
@@ -159,17 +175,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
             measurement_unit=F('ingredient__measurement_unit'),
         ).order_by('name')
 
-        shopping_cart = {}
-        for ingredient in ingredients:
-            key = (ingredient['name'], ingredient['measurement_unit'])
-            shopping_cart[key] = (shopping_cart.get(key, 0)
-                                  + ingredient['amount'])
-
-        file_content_string = 'Список покупок:'
-        for key in shopping_cart:
-            file_content_string += ('\n' + f'{key[0]} - {shopping_cart[key]} '
-                                    f'{key[1]}')
-        return FileResponse(file_content_string,
+        return FileResponse(RecipeViewSet.create_ingredients_str(ingredients),
                             as_attachment=True,
                             content_type='text/plain')
 
@@ -181,9 +187,9 @@ class RecipeViewSet(viewsets.ModelViewSet):
         }
         relation_serializer = serializer(data=relation_dict)
         relation_serializer.is_valid(raise_exception=True)
-        relation_instance = relation_serializer.save()
-        return JsonResponse(
-            RecipeShortSerializer(relation_instance.recipe).data,
+        relation_serializer.save()
+        return Response(
+            relation_serializer.data,
             status=status.HTTP_201_CREATED
         )
 

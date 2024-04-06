@@ -31,7 +31,7 @@ class RecipeAdmin(admin.ModelAdmin):
     inlines = (
         IngredientRecipeInline,
     )
-    list_display = ('name', 'author', 'favorited_count')
+    list_display = ('name', 'author', 'ingredients_list', 'favorited_count')
     list_filter = ('author', 'tags',)
     search_fields = ('name',)
     filter_horizontal = ('tags',)
@@ -39,6 +39,13 @@ class RecipeAdmin(admin.ModelAdmin):
     @admin.display(description='кол-во добавлений в избранное')
     def favorited_count(self, obj):
         return obj.favorite_set.count()
+
+    @admin.display(description='ингредиенты')
+    def ingredients_list(self, obj):
+        ingredients_str = ''
+        for ingredient in obj.ingredients.all():
+            ingredients_str += f', {ingredient}'
+        return ingredients_str[2:]
 
 
 admin.site.register(Tag)
