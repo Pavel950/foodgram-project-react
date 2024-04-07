@@ -7,30 +7,16 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from recipes.models import (Favorite, Follow, Ingredient, IngredientRecipe,
+                            Recipe, ShoppingCart, Tag, User)
+
 from .filters import IngredientFilter, RecipeFilter
 from .pagination import PageNumberLimitPagination
 from .permissions import AuthorOrReadOnly
-from .serializers import (
-    FavoriteSerializer,
-    FollowSerializer,
-    IngredientSerializer,
-    RecipeGetSerializer,
-    RecipeSerializer,
-    ShoppingCartSerializer,
-    TagSerializer,
-    UserSerializer,
-    UserRecipesSerializer
-)
-from recipes.models import (
-    Favorite,
-    Follow,
-    Ingredient,
-    IngredientRecipe,
-    Recipe,
-    ShoppingCart,
-    Tag,
-    User
-)
+from .serializers import (FavoriteSerializer, FollowSerializer,
+                          IngredientSerializer, RecipeGetSerializer,
+                          RecipeSerializer, ShoppingCartSerializer,
+                          TagSerializer, UserRecipesSerializer, UserSerializer)
 
 
 class UserSubscriptionViewSet(UserViewSet):

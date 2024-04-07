@@ -2,16 +2,8 @@ from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers, validators
 
 import recipes.constants
-from recipes.models import (
-    Favorite,
-    Follow,
-    Ingredient,
-    IngredientRecipe,
-    Recipe,
-    ShoppingCart,
-    Tag,
-    User
-)
+from recipes.models import (Favorite, Follow, Ingredient, IngredientRecipe,
+                            Recipe, ShoppingCart, Tag, User)
 
 
 class NotNullBase64ImageField(Base64ImageField):
