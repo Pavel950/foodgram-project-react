@@ -219,7 +219,7 @@ class RecipeShortSerializer(serializers.ModelSerializer):
 
 class UserRecipesSerializer(UserSerializer):
     recipes = serializers.SerializerMethodField()
-    recipes_count = serializers.IntegerField(default=-1)
+    recipes_count = serializers.IntegerField(default=0)
 
     class Meta(UserSerializer.Meta):
         fields = UserSerializer.Meta.fields + ('recipes', 'recipes_count')
@@ -247,12 +247,6 @@ class UserRecipesSerializer(UserSerializer):
             many=True
         ).data
 
-    def to_representation(self, instance):
-        repr = super().to_representation(instance)
-        if repr['recipes_count'] == -1:
-            repr['recipes_count'] = instance.recipes.all().count()
-        return repr
-
 
 class UserRecipeBaseSerializer(serializers.ModelSerializer):
 
@@ -263,10 +257,14 @@ class UserRecipeBaseSerializer(serializers.ModelSerializer):
         return RecipeShortSerializer(instance.recipe).data
 
     def validate(self, attrs):
-        validators.UniqueTogetherValidator(
-            queryset=self.Meta.model.objects.all(),
-            fields=('user', 'recipe')
-        )(attrs, self)
+        if self.Meta.model.objects.filter(
+            user=attrs['user'],
+            recipe=attrs['recipe']
+        ).exists():
+            raise serializers.ValidationError(
+                {'errors': ('Связь между пользователем и рецептом '
+                            f'{str(attrs["recipe"])} уже существует.')}
+            )
         return super().validate(attrs)
 
 
@@ -298,7 +296,7 @@ class FollowSerializer(serializers.ModelSerializer):
     def validate_author(self, value):
         if value == self.context['request'].user:
             raise serializers.ValidationError(
-                'Пользователь не может подписаться на себя самого!'
+                {'author': 'Пользователь не может подписаться на себя самого!'}
             )
         return value
 

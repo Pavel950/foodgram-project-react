@@ -42,10 +42,9 @@ class RecipeAdmin(admin.ModelAdmin):
 
     @admin.display(description='ингредиенты')
     def ingredients_list(self, obj):
-        ingredients_str = ''
-        for ingredient in obj.ingredients.all():
-            ingredients_str += f', {ingredient}'
-        return ingredients_str[2:]
+        return ', '.join(
+            str(ingredient) for ingredient in obj.ingredients.all()
+        )
 
 
 admin.site.register(Tag)

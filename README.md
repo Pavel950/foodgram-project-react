@@ -1,4 +1,6 @@
 # Foodgram
+![Main Foodgram workflow](https://github.com/Pavel950/foodgram-project-react/actions/workflows/main.yml/badge.svg)
+
 
 ## Описание
 Foodgram - сервис для публикации рецептов.  
